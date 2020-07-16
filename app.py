@@ -44,7 +44,53 @@ if not os.environ.get("API_KEY"):
 @login_required
 def index():
     """Show portfolio of stocks"""
-    return apology("TODO")
+    # Query the user's transactions
+    rows = db.execute("SELECT * FROM transactions WHERE userID=:id", id=session["user_id"])
+    table = {}
+    total = 0
+    for row in rows:
+        # If the symbol is not found in the table, create a new dictionary
+        if row["symbol"] not in table:
+            row_dict = {}
+            # Get the symbol and quantity from the query
+            row_dict["symbol"] = row["symbol"]
+            row_dict["shares"] = int(row["quantity"])
+
+            # Look up the symbol and store the resulting information in the dictionary
+            quote_lookup = lookup(row["symbol"])
+            row_dict["name"] = quote_lookup["name"]
+            row_dict["price"] = quote_lookup["price"]
+            # Calculate the total and store it in the dictionary
+            row_dict["total"] = row_dict["shares"] * quote_lookup["price"]
+
+            # Add to the total balance
+            total += row_dict["total"]
+            # Store the row's dictionary
+            table[row["symbol"]] = row_dict
+        # If the symbol is already in the dictionary
+        else:
+            # Add the quantity to the total shares for the stock
+            table[row["symbol"]]["shares"] += int(row["quantity"])
+
+            # Look up the symbol
+            quote_lookup = lookup(row["symbol"])
+            # Add to the entry's total
+            table[row["symbol"]]["total"] += int(row["quantity"]) * quote_lookup["price"]
+            # Add to the total balance
+            total += int(row["quantity"]) * quote_lookup["price"]
+    
+    # Format the float prices for each stock
+    for d in table.values():
+        d["price"] = usd(d["price"])
+        d["total"] = usd(d["total"])
+    
+    # Get the user's cash and add it to the total balance
+    user_row = db.execute("SELECT * FROM users WHERE id=:id", id=session["user_id"])[0]
+    cash = user_row["cash"]
+    total += cash
+
+    # Return index.html with the table dictionary, cash, and total
+    return render_template("index.html", table=table.values(), cash=usd(cash), total=usd(total))
 
 
 @app.route("/buy", methods=["GET", "POST"])
@@ -60,7 +106,7 @@ def buy():
         # Ensure that the symbol is valid and that the symbol is not blank
         if not symbol or symbol_quote is None:
             return apology("invalid symbol", 403)
-        
+
         # Ensure that shares is not blank
         if not shares:
             return apology("invalid quantity", 403)
@@ -193,7 +239,31 @@ def register():
 @login_required
 def sell():
     """Sell shares of stock"""
-    return apology("TODO")
+    if request.method == "POST":
+        symbol, shares = request.form.get("symbol"), int(request.form.get("shares"))
+
+        if not symbol:
+            return apology("empty symbol", 403)
+        if not shares:
+            return apology("shares field is empty", 403)
+        
+        count = db.execute("SELECT SUM(quantity) FROM transactions WHERE userID=:userID AND symbol=:symbol", userID=session["user_id"], symbol=symbol)[0]['SUM(quantity)']
+        if shares > count:
+            return apology("not enough shares", 403)
+        
+        db.execute("INSERT INTO transactions ('userID', 'symbol', 'quantity', 'timestamp') VALUES (:userID, :symbol, :quantity, datetime('now'))", userID=session["user_id"], symbol=symbol, quantity=-shares)
+        quote = lookup(symbol)
+        user_cash = db.execute("SELECT * FROM users WHERE id=:id", id=session["user_id"])[0]["cash"]
+        user_cash += shares * quote["price"]
+
+        db.execute("UPDATE users SET cash=:cash WHERE id=:id", cash=user_cash, id=session["user_id"])
+        
+        return redirect("/")
+
+    else:
+        rows = db.execute("SELECT * FROM transactions WHERE userID=:id GROUP BY symbol", id=session["user_id"])
+
+        return render_template("sell.html", rows=rows)
 
 
 def errorhandler(e):
