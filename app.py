@@ -52,24 +52,34 @@ def index():
 def buy():
     """Buy shares of stock"""
     if request.method == "POST":
+        # Get information from request form
         symbol, shares = request.form.get("symbol"), int(request.form.get("shares"))
+        # Look up the given symbol
         symbol_quote = lookup(symbol)
 
+        # Ensure that the symbol is valid and that the symbol is not blank
         if not symbol or symbol_quote is None:
             return apology("invalid symbol", 403)
         
+        # Ensure that shares is not blank
         if not shares:
             return apology("invalid quantity", 403)
         
+        # Get information about the user from the database
         user_row = db.execute("SELECT * FROM users WHERE id=:id", id=session["user_id"])[0]
+        # Get the user's balance from the query
         user_cash = user_row["cash"]
 
+        # Ensure that the user has enough cash to make the transaction
         if symbol_quote["price"] * shares > user_cash:
             return apology("not enough cash", 403)
         
+        # Insert the transaction into the database
         db.execute("INSERT INTO transactions ('userID', 'symbol', 'quantity', 'timestamp') VALUES (:userID, :symbol, :quantity, datetime('now'))", userID=session["user_id"], symbol=symbol, quantity=shares)
+        # Update the user's cash
         db.execute("UPDATE users SET cash = :cash WHERE id = :id", cash=user_cash - (shares * symbol_quote["price"]), id=session["user_id"])
 
+        # Redirect to /
         return redirect("/")
 
     else:
