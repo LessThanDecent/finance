@@ -58,6 +58,7 @@ def buy():
 @login_required
 def history():
     """Show history of transactions"""
+
     return apology("TODO")
 
 
@@ -119,7 +120,28 @@ def quote():
 @app.route("/register", methods=["GET", "POST"])
 def register():
     """Register user"""
-    return apology("TODO")
+
+    if request.method == "POST":
+        username, password, confirmation = request.form.get("username"), request.form.get("password"), request.form.get("confirmation")
+
+        # Ensure username is not taken and that username is not blank
+        rows = db.execute("SELECT * FROM users WHERE username = :username", username=username)
+        if len(rows) != 0 or not username:
+            return apology("invalid username", 403)
+        
+        # Ensure both passwords are not blank
+        if not password or not confirmation:
+            return apology("password is empty", 403)
+        
+        # Ensure that passwords match
+        if password != confirmation:
+            return apology("passwords do not match", 403)
+        
+        # Insert the new login information into the database
+        db.execute("INSERT INTO users (username, hash) VALUES (:username, :hash)", username=username, hash=generate_password_hash(password))
+
+    else:
+        return render_template("register.html")
 
 
 @app.route("/sell", methods=["GET", "POST"])
