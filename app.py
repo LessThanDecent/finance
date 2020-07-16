@@ -80,9 +80,12 @@ def index():
             total += int(row["quantity"]) * quote_lookup["price"]
     
     # Format the float prices for each stock
-    for d in table.values():
+    for d in list(table.values())[:]:
         d["price"] = usd(d["price"])
         d["total"] = usd(d["total"])
+
+        if d["shares"] <= 0:
+            del table[d["symbol"]]
     
     # Get the user's cash and add it to the total balance
     user_row = db.execute("SELECT * FROM users WHERE id=:id", id=session["user_id"])[0]
@@ -121,7 +124,7 @@ def buy():
             return apology("not enough cash", 403)
         
         # Insert the transaction into the database
-        db.execute("INSERT INTO transactions ('userID', 'symbol', 'quantity', 'timestamp') VALUES (:userID, :symbol, :quantity, datetime('now'))", userID=session["user_id"], symbol=symbol, quantity=shares)
+        db.execute("INSERT INTO transactions ('userID', 'symbol', 'quantity', 'timestamp', 'price') VALUES (:userID, :symbol, :quantity, datetime('now'), :price)", userID=session["user_id"], symbol=symbol, quantity=shares, price=symbol_quote["price"])
         # Update the user's cash
         db.execute("UPDATE users SET cash = :cash WHERE id = :id", cash=user_cash - (shares * symbol_quote["price"]), id=session["user_id"])
 
@@ -136,8 +139,11 @@ def buy():
 @login_required
 def history():
     """Show history of transactions"""
+    # Get the user's transactions
+    rows = db.execute("SELECT * FROM transactions WHERE userID=:id", id=session["user_id"])
 
-    return apology("TODO")
+    # Use them in history.html
+    return render_template("history.html", rows=rows)
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -231,6 +237,8 @@ def register():
         # Insert the new login information into the database
         db.execute("INSERT INTO users (username, hash) VALUES (:username, :hash)", username=username, hash=generate_password_hash(password))
 
+        return redirect("/login")
+
     else:
         return render_template("register.html")
 
@@ -240,30 +248,41 @@ def register():
 def sell():
     """Sell shares of stock"""
     if request.method == "POST":
+        # Get info from the form
         symbol, shares = request.form.get("symbol"), int(request.form.get("shares"))
 
+        # Ensure that the symbol field is not blank
         if not symbol:
             return apology("empty symbol", 403)
+        # Ensure that the shares field is not blank
         if not shares:
             return apology("shares field is empty", 403)
         
+        # Get the number of shares that the user owns and ensure that the user owns enough shares to sell
         count = db.execute("SELECT SUM(quantity) FROM transactions WHERE userID=:userID AND symbol=:symbol", userID=session["user_id"], symbol=symbol)[0]['SUM(quantity)']
         if shares > count:
             return apology("not enough shares", 403)
-        
-        db.execute("INSERT INTO transactions ('userID', 'symbol', 'quantity', 'timestamp') VALUES (:userID, :symbol, :quantity, datetime('now'))", userID=session["user_id"], symbol=symbol, quantity=-shares)
+
+        # Look up symbol
         quote = lookup(symbol)
+        
+        # Create a new transaction in the sql table
+        db.execute("INSERT INTO transactions ('userID', 'symbol', 'quantity', 'timestamp', 'price') VALUES (:userID, :symbol, :quantity, datetime('now'), :price)", userID=session["user_id"], symbol=symbol, quantity=-shares, price=quote["price"])
+        
+        # Add to the user's cash
         user_cash = db.execute("SELECT * FROM users WHERE id=:id", id=session["user_id"])[0]["cash"]
         user_cash += shares * quote["price"]
-
+        # Edit the user's cash in the users table
         db.execute("UPDATE users SET cash=:cash WHERE id=:id", cash=user_cash, id=session["user_id"])
         
+        # Redirect the user to index.html
         return redirect("/")
 
     else:
+        # Get every different stock the user owns to show in the dropdown
         rows = db.execute("SELECT * FROM transactions WHERE userID=:id GROUP BY symbol", id=session["user_id"])
-
         return render_template("sell.html", rows=rows)
+
 
 
 def errorhandler(e):
