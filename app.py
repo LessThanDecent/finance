@@ -283,7 +283,30 @@ def sell():
         rows = db.execute("SELECT * FROM transactions WHERE userID=:id GROUP BY symbol", id=session["user_id"])
         return render_template("sell.html", rows=rows)
 
+@app.route("/addcash", methods=["GET", "POST"])
+@login_required
+def addCash():
+    """Add additional cash to account"""
+    if request.method == "POST":
+        # Get amount to add from form
+        cash_to_add = int(request.form.get("amount"))
+        
+        # Ensure that cash to add field is not empty
+        if not cash_to_add:
+            return apology("cash field empty", 403)
 
+        # Get user's cash and add to it
+        user_cash = db.execute("SELECT * FROM users WHERE id=:id", id=session["user_id"])[0]["cash"]
+        user_cash += cash_to_add
+
+        # Update the cash in users table
+        db.execute("UPDATE users SET cash=:cash WHERE id=:id", cash=user_cash, id=session["user_id"])
+
+        # Redirect user to index.html
+        return redirect("/")
+    
+    else:
+        return render_template("addcash.html")
 
 def errorhandler(e):
     """Handle error"""
